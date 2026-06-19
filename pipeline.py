@@ -1,15 +1,13 @@
 """
 pipeline.py
 -----------
-ORQUESTRADOR do projeto: roda todas as etapas na ordem certa, do PDF ao banco.
+ORQUESTRADOR do projeto: roda os dois fluxos na ordem certa, do Tesouro ao banco.
 
-    1. ingest          -> baixa o PDF do mês.
-    2. extract         -> separa texto (não estruturado) e prepara o conteúdo.
-    3. load_structured -> curamos os números e gravamos em fatos_fiscais.
-    4. rag_index       -> chunk + embeddings + pgvector (base do chat).
+    ESTRUTURADO: ingest (xlsx) -> load_series -> fatos_fiscais (números).
+    RAG:         ingest (pdf)  -> extract -> rag_index -> pgvector (texto/chat).
 
-É este arquivo que o GitHub Actions executa todo mês. Também dá para rodar
-na mão:  python pipeline.py --mes 2024-05
+É este arquivo que o GitHub Actions executa diariamente. Também dá para rodar
+na mão:  python pipeline.py --mes 2026-04  (ou sem --mes p/ o mês mais recente).
 
 Decisão: os dois "tracks" (números e texto) são independentes. Se um falhar,
 o outro ainda agrega valor — então cada um é envolvido em seu próprio try,

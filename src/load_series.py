@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .load_structured import FatoFiscal, carregar
+from .models import FatoFiscal, carregar
 
 # Aba e janela temporal (decisão: ~6 anos de histórico).
 ABA = "1.1"

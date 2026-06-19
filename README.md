@@ -116,10 +116,6 @@ ajuste de uma linha.
 | Backfill (RAG) | `scripts/backfill_rag.py` | Indexa uma faixa de meses passados para o chat cobrir o histórico. |
 | Orquestração | `pipeline.py` | Roda os dois fluxos; sai com erro só se *ambos* falharem. |
 
-> O `src/load_structured.py` (extrair os números da prosa do PDF) é mantido como
-> extrator alternativo, mas o dashboard é alimentado pela planilha, que é
-> consistente ao longo de todo o histórico.
-
 ---
 
 ## Rodando localmente
@@ -186,8 +182,8 @@ projeto_rtn/
 │   ├── config.py            # configuração central (variáveis de ambiente)
 │   ├── ingest.py            # resolve + baixa .xlsx e PDF
 │   ├── load_series.py       # série histórica .xlsx → fatos_fiscais
+│   ├── models.py            # FatoFiscal (Pydantic) + upsert em fatos_fiscais
 │   ├── extract.py           # PDF → texto limpo
-│   ├── load_structured.py   # (alt) extrai números da prosa do PDF
 │   ├── rag_index.py         # texto → pgvector
 │   └── rag_query.py         # RAG híbrido (fatos + texto → Groq)
 ├── app/

@@ -1,14 +1,14 @@
 """
 extract.py
 ----------
-PASSO 2 do pipeline: extrair o conteúdo do PDF, separando os dois mundos:
-
-  TRACK ESTRUTURADO  -> extract_tables()  : as TABELAS de números.
-  TRACK NÃO ESTRUTURADO -> extract_text() : o TEXTO corrido (justificativas).
+Extrai o TEXTO corrido do PDF do Sumário Executivo, insumo do track RAG.
 
 Usamos pdfplumber porque ele preserva bem o layout de PDFs "digitais"
 (gerados por software, não escaneados), que é o caso dos relatórios do
 Tesouro. Para PDF escaneado precisaríamos de OCR — não é o caso aqui.
+
+(Os números do dashboard NÃO vêm do PDF: o track estruturado usa a planilha
+oficial de série histórica — ver load_series.py.)
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pandas as pd
 import pdfplumber
 
 
@@ -43,27 +42,6 @@ def limpar_texto(texto: str) -> str:
     return texto.strip()
 
 
-def extract_tables(pdf_path: str | Path) -> list[pd.DataFrame]:
-    """Extrai todas as tabelas do PDF como DataFrames do pandas.
-
-    Cada tabela vira um DataFrame "bruto" (primeira linha = cabeçalho).
-    A curadoria/normalização desses números acontece depois, em
-    load_structured.py, onde validamos o schema com Pydantic.
-    """
-    tabelas: list[pd.DataFrame] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for pagina in pdf.pages:
-            for bruta in pagina.extract_tables():
-                if not bruta or len(bruta) < 2:
-                    continue
-                cabecalho, *linhas = bruta
-                cabecalho = [str(c).strip() if c else f"col_{i}"
-                             for i, c in enumerate(cabecalho)]
-                df = pd.DataFrame(linhas, columns=cabecalho)
-                tabelas.append(df)
-    return tabelas
-
-
 if __name__ == "__main__":
     # Teste rápido: aponte para um PDF já baixado em data/raw/.
     import sys
@@ -71,7 +49,3 @@ if __name__ == "__main__":
     caminho = sys.argv[1] if len(sys.argv) > 1 else "data/raw/exemplo.pdf"
     print("=== TEXTO (primeiros 800 chars) ===")
     print(limpar_texto(extract_text(caminho))[:800])
-    print("\n=== TABELAS ENCONTRADAS ===")
-    for i, t in enumerate(extract_tables(caminho)):
-        print(f"\n--- Tabela {i} ({t.shape[0]}x{t.shape[1]}) ---")
-        print(t.head())
