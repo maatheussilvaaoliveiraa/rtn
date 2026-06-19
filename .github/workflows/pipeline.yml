@@ -1,17 +1,19 @@
-name: Pipeline RTN (mensal)
+name: Pipeline RTN (diário)
 
 # Quando rodar:
-#   - schedule: todo dia 5 às 09:00 UTC (~06:00 BRT). O RTN do mês anterior
-#     já costuma estar publicado nessa data. Cron do GitHub usa UTC.
+#   - schedule: DIARIAMENTE às 09:00 UTC (~06:00 BRT). Sem --mes, o pipeline
+#     detecta o mês publicado mais recente e o carrega de forma idempotente —
+#     então a maioria dos dias é um "no-op" barato e, quando um novo RTN sai,
+#     ele é capturado em até 24h. Cron do GitHub usa UTC.
 #   - workflow_dispatch: botão "Run workflow" para disparo manual, com a
-#     opção de informar um mês específico (útil para backfill/teste).
+#     opção de informar um mês específico (útil para reprocessar/testar).
 on:
   schedule:
-    - cron: "0 9 5 * *"
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       mes:
-        description: "Mês de referência (AAAA-MM). Vazio = mês atual."
+        description: "Mês de referência (AAAA-MM). Vazio = mês publicado mais recente."
         required: false
         default: ""
 

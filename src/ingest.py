@@ -72,6 +72,33 @@ def _achar_anexo(ano: int, mes: int, chave_texto: str, rotulo: str) -> str:
     )
 
 
+def mes_mais_recente_publicado(referencia: str | None = None,
+                               max_voltar: int = 4) -> str | None:
+    """Acha o mês publicado mais recente, sondando a partir de `referencia`
+    (ou do mês atual) para trás, até `max_voltar` meses.
+
+    Por que isto existe: o RTN de um mês X só é publicado ~no fim do mês X+1.
+    Um agendamento diário que mirasse o "mês atual" quase sempre cairia num mês
+    ainda não publicado. Aqui descobrimos o último que de fato existe no site,
+    o que torna o cron diário capaz de capturar um mês novo assim que ele sai.
+    """
+    if referencia is None:
+        hoje = dt.date.today()
+        ano, mes = hoje.year, hoje.month
+    else:
+        ano, mes = int(referencia[:4]), int(referencia[5:7])
+
+    for _ in range(max_voltar + 1):
+        try:
+            _achar_anexo(ano, mes, "sumario_executivo", "Sumário Executivo")
+            return f"{ano}-{mes:02d}"
+        except Exception:  # noqa: BLE001 — página inexistente => tenta mês anterior
+            mes -= 1
+            if mes < 1:
+                ano, mes = ano - 1, 12
+    return None
+
+
 def _descobrir_url(ano: int, mes: int) -> str:
     """Resolve a URL do PDF do Sumário Executivo para um ano/mês.
 

@@ -20,20 +20,37 @@ o Actions marcar o job como vermelho e o usuário ser avisado).
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import sys
+
+from sqlalchemy import create_engine, text
 
 from src import config
 from src.extract import extract_text, limpar_texto
-from src.ingest import baixar_pdf, baixar_serie_historica
+from src.ingest import baixar_pdf, baixar_serie_historica, mes_mais_recente_publicado
 from src.load_series import carregar_series
 from src.rag_index import indexar
 
 
-def _mes_default() -> str:
-    """Mês de referência padrão = mês corrente, no formato 'AAAA-MM'."""
-    hoje = dt.date.today()
-    return f"{hoje.year}-{hoje.month:02d}"
+def _ja_indexado(mes_referencia: str) -> bool:
+    """True se o mês já tem chunks no pgvector (evita re-embeddar à toa).
+
+    Importante para o agendamento DIÁRIO: na maioria dos dias o último mês já
+    está indexado, então pulamos a etapa cara de embeddings e o run fica leve.
+    """
+    try:
+        engine = create_engine(config.DATABASE_URL)
+        with engine.connect() as conn:
+            n = conn.execute(
+                text(
+                    "SELECT count(*) FROM langchain_pg_embedding "
+                    "WHERE cmetadata->>'mes_referencia' = :mes"
+                ),
+                {"mes": mes_referencia},
+            ).scalar()
+        engine.dispose()
+        return bool(n)
+    except Exception:  # noqa: BLE001 — tabela ainda não existe no 1º run
+        return False
 
 
 def rodar(mes_referencia: str) -> int:
@@ -50,6 +67,8 @@ def rodar(mes_referencia: str) -> int:
     ok_numeros = ok_texto = False
 
     # --- Track estruturado: série histórica (xlsx) -> fatos_fiscais ---
+    # Sempre rodamos: a planilha é cumulativa e pode trazer revisões de meses
+    # anteriores; o upsert é idempotente.
     try:
         xlsx_path = baixar_serie_historica(mes_referencia)
         n = carregar_series(xlsx_path)
@@ -59,15 +78,19 @@ def rodar(mes_referencia: str) -> int:
         print(f"[pipeline] FALHA no track estruturado: {type(e).__name__}: {e}")
 
     # --- Track RAG: texto do PDF do mês -> pgvector ---
-    try:
-        pdf_path = baixar_pdf(mes_referencia)
-        texto = limpar_texto(extract_text(pdf_path))
-        print(f"[pipeline] texto extraído: {len(texto):,} caracteres.")
-        c = indexar(texto, mes_referencia)
-        ok_texto = c > 0
-        print(f"[pipeline] track RAG: {c} chunks indexados.")
-    except Exception as e:  # noqa: BLE001
-        print(f"[pipeline] FALHA no track RAG: {type(e).__name__}: {e}")
+    if _ja_indexado(mes_referencia):
+        ok_texto = True
+        print(f"[pipeline] track RAG: {mes_referencia} já indexado — pulando.")
+    else:
+        try:
+            pdf_path = baixar_pdf(mes_referencia)
+            texto = limpar_texto(extract_text(pdf_path))
+            print(f"[pipeline] texto extraído: {len(texto):,} caracteres.")
+            c = indexar(texto, mes_referencia)
+            ok_texto = c > 0
+            print(f"[pipeline] track RAG: {c} chunks indexados.")
+        except Exception as e:  # noqa: BLE001
+            print(f"[pipeline] FALHA no track RAG: {type(e).__name__}: {e}")
 
     # --- Resumo ---
     print("\n=== RESUMO ===")
@@ -82,14 +105,25 @@ def rodar(mes_referencia: str) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline RTN (PDF -> Neon).")
+    parser = argparse.ArgumentParser(description="Pipeline RTN (Tesouro -> Neon).")
     parser.add_argument(
         "--mes",
-        default=_mes_default(),
-        help="Mês de referência no formato AAAA-MM (padrão: mês atual).",
+        default=None,
+        help="Mês de referência AAAA-MM. Se omitido, usa o mês PUBLICADO mais "
+             "recente (ideal para o agendamento diário).",
     )
     args = parser.parse_args()
-    sys.exit(rodar(args.mes))
+
+    mes = args.mes
+    if mes is None:
+        mes = mes_mais_recente_publicado()
+        if mes is None:
+            print("[pipeline] Nenhum mês publicado encontrado nas últimas "
+                  "edições — nada a fazer hoje.")
+            sys.exit(0)  # cron diário: ausência de novidade não é erro
+        print(f"[pipeline] Mês publicado mais recente detectado: {mes}")
+
+    sys.exit(rodar(mes))
 
 
 if __name__ == "__main__":
