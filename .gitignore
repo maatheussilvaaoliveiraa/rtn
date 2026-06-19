@@ -1,0 +1,19 @@
+# Segredos
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# PDFs brutos baixados (opcional manter no repo p/ auditoria — veja README)
+data/raw/*.pdf
+
+# Cache de modelos do fastembed
+.fastembed_cache/
+.cache/
+
+# Streamlit
+.streamlit/secrets.toml
