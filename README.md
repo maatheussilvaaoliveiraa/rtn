@@ -1,214 +1,219 @@
-# RTN Data Pipeline — Brazilian Treasury Result (Sumário Executivo do RTN)
+# Pipeline de Dados do RTN — Resultado do Tesouro Nacional (Sumário Executivo)
 
-An end-to-end, **fully automated and zero-cost** data pipeline built around the
-Brazilian National Treasury's monthly RTN release. It runs two tracks:
+Um pipeline de dados **totalmente automatizado e de custo zero**, construído em
+torno da divulgação mensal do RTN pelo Tesouro Nacional. Ele roda dois fluxos:
 
-- a **structured track** — loads the Treasury's official *historical-series
-  spreadsheet* (`.xlsx`, monthly data since 1997) into Postgres for an analytics
-  dashboard (time series + year-over-year), and
-- an **unstructured track** — indexes the *Executive Summary* PDF text into a
-  vector store for a **hybrid RAG chatbot**.
+- um **fluxo estruturado** — carrega a *planilha oficial de série histórica* do
+  Tesouro (`.xlsx`, dados mensais desde 1997) no Postgres para um dashboard
+  analítico (série temporal + comparação ano a ano); e
+- um **fluxo não estruturado** — indexa o texto do *Sumário Executivo* (PDF) em
+  um banco vetorial para um **chatbot RAG híbrido**.
 
-Both are served through an interactive web app.
+Ambos são servidos por um aplicativo web interativo.
 
-> Built as a portfolio project to demonstrate the move from traditional data
-> analysis to **modern data engineering + applied AI** (RAG over real documents).
-
----
-
-## Why this project
-
-Public-finance reports are published as PDFs — easy for humans, hard for
-machines. This pipeline turns that monthly PDF into:
-
-- a **time series** of fiscal indicators you can chart, and
-- a **question-answering assistant** grounded *only* in the report's own text
-  (so answers are auditable and hallucination is minimized).
-
-It runs on a schedule with **no servers to manage and no cloud bill** — every
-component sits on a generous free tier.
+> Construído como projeto de portfólio para demonstrar a evolução da análise de
+> dados tradicional para **engenharia de dados moderna + IA aplicada** (RAG sobre
+> documentos reais).
 
 ---
 
-## Architecture
+## Por que este projeto
+
+Relatórios de finanças públicas são publicados em PDF — fáceis para humanos,
+difíceis para máquinas. Este pipeline transforma esse material mensal em:
+
+- uma **série temporal** de indicadores fiscais para visualizar em gráficos; e
+- um **assistente de perguntas e respostas** ancorado *apenas* no conteúdo do
+  próprio relatório (respostas auditáveis e com alucinação minimizada).
+
+Tudo roda de forma agendada, **sem servidores para gerenciar e sem conta de
+nuvem** — cada componente fica num plano gratuito generoso.
+
+---
+
+## Arquitetura
 
 ```mermaid
 flowchart LR
-    A[Treasury site<br/>historical-series .xlsx] -->|ingest + load_series| D[parse sheet 1.1<br/>+ Pydantic]
-    P[Treasury site<br/>Executive Summary PDF] -->|ingest + extract| E[rag_index.py<br/>chunk + embeddings]
+    A[Site do Tesouro<br/>série histórica .xlsx] -->|ingest + load_series| D[lê aba 1.1<br/>+ Pydantic]
+    P[Site do Tesouro<br/>Sumário Executivo PDF] -->|ingest + extract| E[rag_index.py<br/>chunk + embeddings]
     D --> F[(Neon Postgres<br/>fatos_fiscais)]
     E --> G[(Neon Postgres<br/>pgvector)]
-    F --> H[Streamlit Dashboard<br/>KPIs · YoY · time series]
+    F --> H[Dashboard Streamlit<br/>KPIs · YoY · série temporal]
     F --> I
-    G --> I[Streamlit Chat<br/>hybrid RAG via Groq]
+    G --> I[Chat Streamlit<br/>RAG híbrido via Groq]
 
-    subgraph Orchestration
-        J[GitHub Actions<br/>monthly cron]
+    subgraph Orquestracao[Orquestração]
+        J[GitHub Actions<br/>cron diário]
     end
-    J -.runs.-> A
-    J -.runs.-> P
+    J -.roda.-> A
+    J -.roda.-> P
 ```
 
-`ingest.py` resolves the monthly download URLs automatically (it scrapes the
-publication page and follows the PDF's `<iframe>` to the CDN), so no manual
-links are needed. The two tracks are independent: if one fails, the other still
-delivers value. The chat is **hybrid RAG** — it grounds answers on both the
-curated numbers (`fatos_fiscais`) and the retrieved report text.
-
-The whole thing is orchestrated by `pipeline.py`, executed monthly by
-**GitHub Actions**. The two tracks are independent: if one fails, the other
-still delivers value.
+O `ingest.py` resolve as URLs de download automaticamente (varre a página de
+publicação e segue o `<iframe>` do PDF até o CDN), então nenhum link manual é
+necessário. Os dois fluxos são independentes: se um falhar, o outro ainda entrega
+valor. O chat é **RAG híbrido** — ancora as respostas tanto nos números curados
+(`fatos_fiscais`) quanto no texto do relatório recuperado. Tudo é orquestrado
+pelo `pipeline.py`, executado diariamente pelo **GitHub Actions**.
 
 ---
 
-## Tech stack & key decisions
+## Stack e decisões-chave
 
-| Concern | Choice | Why |
+| Tema | Escolha | Por quê |
 |---|---|---|
-| **Structured source** | Official **historical-series `.xlsx`** (openpyxl) | Authoritative monthly data since 1997 — far more robust than scraping numbers from prose, and it's cumulative (one file = full history). |
-| **Database** | Neon Postgres + **pgvector** | One managed instance holds *both* the structured facts and the embeddings. Fewer moving parts, generous free tier. |
-| **Embeddings** | **fastembed** (ONNX) — `paraphrase-multilingual-MiniLM-L12-v2` | Runs locally, multilingual (handles Portuguese), and **no PyTorch** — fits the ~1 GB RAM of Streamlit's free tier. |
-| **LLM (RAG)** | **Groq** — `llama-3.3-70b-versatile` | Fast inference on a free tier, no credit card. |
-| **PDF parsing** | **pdfplumber** | Preserves layout of digital (non-scanned) government PDFs. |
-| **Chunking** | `RecursiveCharacterTextSplitter` (1000 / 150) | Splits on natural boundaries; overlap avoids cutting an idea in half. |
-| **Dashboard** | **Streamlit Community Cloud** | Free hosting, Git auto-deploy, Python-native UI. |
-| **Orchestration** | **GitHub Actions** | Free scheduled cron + manual trigger; no server to run. |
-| **Validation** | **Pydantic** | Acts as a "data gatekeeper" — bad numbers are rejected before they reach the DB. |
+| **Fonte estruturada** | **Planilha oficial de série histórica `.xlsx`** (openpyxl) | Dados mensais oficiais desde 1997 — muito mais robusto do que raspar números da prosa, e é cumulativa (um arquivo = histórico inteiro). |
+| **Banco de dados** | Neon Postgres + **pgvector** | Uma única instância gerenciada guarda *tanto* os fatos estruturados *quanto* os vetores. Menos peças móveis, plano gratuito generoso. |
+| **Embeddings** | **fastembed** (ONNX) — `paraphrase-multilingual-MiniLM-L12-v2` | Roda localmente, é multilíngue (entende português) e **sem PyTorch** — cabe no ~1 GB de RAM do plano gratuito do Streamlit. |
+| **LLM (RAG)** | **Groq** — `llama-3.3-70b-versatile` | Inferência rápida no plano gratuito, sem cartão de crédito. |
+| **Leitura de PDF** | **pdfplumber** | Preserva o layout de PDFs governamentais digitais (não escaneados). |
+| **Chunking** | `RecursiveCharacterTextSplitter` (1000 / 150) | Quebra em fronteiras naturais; a sobreposição evita cortar uma ideia ao meio. |
+| **Dashboard** | **Streamlit Community Cloud** | Hospedagem gratuita, deploy automático via Git, UI em Python puro. |
+| **Orquestração** | **GitHub Actions** | Cron agendado + disparo manual de graça; nenhum servidor para manter. |
+| **Validação** | **Pydantic** | Atua como "porteiro de dados" — números fora do padrão são rejeitados antes de chegar ao banco. |
 
-**Design philosophy:** serverless / "Git-as-infra", idempotent steps (re-running
-a month *updates* rather than duplicates), and config-driven extraction so a
-change in the source layout is a one-line fix.
+**Filosofia de design:** serverless / "Git como infraestrutura", etapas
+idempotentes (reprocessar um mês *atualiza* em vez de duplicar) e extração
+orientada por configuração, para que uma mudança no layout da fonte seja um
+ajuste de uma linha.
 
 ---
 
-## Features
+## Funcionalidades
 
 ### 📊 Dashboard
-- **KPI cards** for the selected month (Total/Net Revenue, Total Expenditure,
-  Primary and Nominal Result — in R$ billion) with **year-over-year deltas**.
-- **Primary result over time** — monthly bars colored by sign (surplus green /
-  deficit red), with a year-range filter (history since 2020).
-- **Net Revenue × Total Expenditure** time series.
-- **Year-over-year comparison** — the chosen metric for the same calendar month
-  across years.
+- **Cartões de KPI** para o mês selecionado (Receita Total/Líquida, Despesa
+  Total, Resultado Primário e Nominal — em R$ bilhões) com **variação ano a ano**.
+- **Resultado primário ao longo do tempo** — barras mensais coloridas por sinal
+  (superávit verde / déficit vermelho), com filtro por faixa de anos (histórico
+  desde 2020).
+- **Receita Líquida × Despesa Total** em série temporal.
+- **Comparação ano a ano** — a métrica escolhida, no mesmo mês do calendário,
+  entre os anos.
 
-### 💬 Ask-the-report chat (hybrid RAG)
-- Combines two context sources: the **curated numbers** for the detected month
-  (always exact) and the **report text chunks** retrieved from pgvector — so even
-  simple factual questions are answered reliably, with qualitative explanations.
-- **Month-aware**: detects a month in the question ("2026-04" or "abril de 2026"),
-  filters retrieval to it, and expands numeric dates to match the Portuguese text.
-- Grounded **only** on the report, minimizing hallucination.
+### 💬 Chat com o relatório (RAG híbrido)
+- Combina duas fontes de contexto: os **números curados** do mês detectado
+  (sempre exatos) e os **trechos do texto** do relatório recuperados do pgvector —
+  então até perguntas factuais simples são respondidas de forma confiável, com
+  explicações qualitativas.
+- **Ciente do mês**: detecta o mês na pergunta ("2026-04" ou "abril de 2026"),
+  filtra a busca por ele e expande datas numéricas para casar com o texto em
+  português.
+- Ancorado **apenas** no relatório, minimizando alucinação.
 
 ---
 
-## Pipeline stages
+## Etapas do pipeline
 
-| Step | File | Responsibility |
+| Etapa | Arquivo | Responsabilidade |
 |---|---|---|
-| Ingest | `src/ingest.py` | Resolve & download the monthly `.xlsx` and PDF (auto URL resolution; `RTN_PDF_URL` optional override). |
-| Load (structured) | `src/load_series.py` | Parse the historical-series sheet, validate with Pydantic, **upsert** into `fatos_fiscais`. |
-| Extract | `src/extract.py` | Pull clean text from the PDF for the RAG track. |
-| Index (unstructured) | `src/rag_index.py` | Chunk text, embed (fastembed), store vectors in pgvector. |
-| Query | `src/rag_query.py` | Hybrid RAG: month detection + structured facts + retrieved text → Groq. |
-| Backfill (RAG) | `scripts/backfill_rag.py` | Index a range of past months so the chat covers history. |
-| Orchestrate | `pipeline.py` | Run both tracks; non-zero exit only if *both* fail. |
+| Ingestão | `src/ingest.py` | Resolve e baixa o `.xlsx` e o PDF do mês (resolução automática de URL; `RTN_PDF_URL` é override opcional). |
+| Carga (estruturado) | `src/load_series.py` | Lê a aba da série histórica, valida com Pydantic e faz **upsert** em `fatos_fiscais`. |
+| Extração | `src/extract.py` | Extrai o texto limpo do PDF para o fluxo RAG. |
+| Indexação (não estruturado) | `src/rag_index.py` | Quebra o texto em chunks, gera embeddings (fastembed) e grava os vetores no pgvector. |
+| Consulta | `src/rag_query.py` | RAG híbrido: detecção de mês + fatos estruturados + texto recuperado → Groq. |
+| Backfill (RAG) | `scripts/backfill_rag.py` | Indexa uma faixa de meses passados para o chat cobrir o histórico. |
+| Orquestração | `pipeline.py` | Roda os dois fluxos; sai com erro só se *ambos* falharem. |
 
-> `src/load_structured.py` (parsing the figures out of the PDF prose) is kept as
-> an alternative extractor, but the dashboard is fed by the spreadsheet, which is
-> consistent across the full history.
+> O `src/load_structured.py` (extrair os números da prosa do PDF) é mantido como
+> extrator alternativo, mas o dashboard é alimentado pela planilha, que é
+> consistente ao longo de todo o histórico.
 
 ---
 
-## Running locally
+## Rodando localmente
 
-> Requires **Python 3.12** (the dependency set targets 3.12; newer fastembed/ONNX
-> wheels for 3.13+ are not pinned here).
+> Requer **Python 3.12** (o conjunto de dependências mira o 3.12; wheels mais
+> novos do fastembed/ONNX para 3.13+ não estão fixados aqui).
 
 ```bash
-# 1. Create and activate a 3.12 virtual environment
+# 1. Crie e ative um ambiente virtual em 3.12
 py -3.12 -m venv .venv
 .venv\Scripts\activate            # Windows
 # source .venv/bin/activate       # macOS/Linux
 
-# 2. Install dependencies
+# 2. Instale as dependências
 pip install -r requirements.txt
 
-# 3. Configure secrets
-cp .env.example .env              # then fill in DATABASE_URL and GROQ_API_KEY
+# 3. Configure os segredos
+cp .env.example .env              # depois preencha DATABASE_URL e GROQ_API_KEY
 
-# 4. One-time: create the schema in Neon (run sql/schema.sql in the Neon SQL editor)
+# 4. Uma vez: crie o schema no Neon (rode sql/schema.sql no SQL editor do Neon)
 
-# 5. Run the pipeline for a given month (downloads .xlsx + PDF, loads both tracks)
+# 5. Rode o pipeline para um mês (baixa .xlsx + PDF e carrega os dois fluxos)
 python pipeline.py --mes 2026-04
 
-# 6. (optional) Backfill RAG text for a range of months
+# 6. (opcional) Backfill do texto RAG para uma faixa de meses
 python scripts/backfill_rag.py 2024-05 2026-04
 
-# 7. Launch the app
+# 7. Suba o app
 streamlit run app/streamlit_app.py
 ```
 
-**Where to get the free keys:**
-- `DATABASE_URL` — [Neon](https://neon.tech) connection string, using the
-  psycopg3 driver prefix: `postgresql+psycopg://...`
+**Onde obter as chaves gratuitas:**
+- `DATABASE_URL` — string de conexão do [Neon](https://neon.tech), com o prefixo
+  do driver psycopg3: `postgresql+psycopg://...`
 - `GROQ_API_KEY` — [Groq Console](https://console.groq.com/keys)
 
 ---
 
-## Deployment
+## Deploy
 
-### Automated runs — GitHub Actions
-`.github/workflows/pipeline.yml` runs on the 5th of each month (09:00 UTC) and
-can also be triggered manually (with an optional `--mes`). Add these repository
-**secrets** (Settings → Secrets and variables → Actions):
+### Execuções automáticas — GitHub Actions
+O `.github/workflows/pipeline.yml` roda **diariamente** (09:00 UTC) e também pode
+ser disparado manualmente (com `--mes` opcional). Sem `--mes`, o pipeline detecta
+o **mês publicado mais recente** e o carrega de forma idempotente — então a
+maioria dos dias é um "no-op" barato e, quando um novo RTN sai, ele é capturado
+em até 24h. Adicione estes **secrets** do repositório (Settings → Secrets and
+variables → Actions):
 
-- `DATABASE_URL` and `GROQ_API_KEY` (and optionally `RTN_PDF_URL` to pin a
-  specific PDF; not needed since the URL is resolved automatically).
+- `DATABASE_URL` e `GROQ_API_KEY` (e, opcionalmente, `RTN_PDF_URL` para fixar um
+  PDF específico; desnecessário, já que a URL é resolvida automaticamente).
 
-### Web app — Streamlit Community Cloud
-Point Streamlit Cloud at `app/streamlit_app.py`, add the same values under
-**Secrets**, and — importantly — **set the Python version to 3.12** in the app's
-advanced settings (the pinned `fastembed` wheel requires < 3.13).
+### Aplicativo web — Streamlit Community Cloud
+Aponte o Streamlit Cloud para `app/streamlit_app.py`, adicione os mesmos valores
+em **Secrets** e — importante — **defina a versão do Python como 3.12** nas
+configurações avançadas do app (o wheel fixado do `fastembed` exige < 3.13).
 
 ---
 
-## Project structure
+## Estrutura do projeto
 
 ```
 projeto_rtn/
 ├── src/
-│   ├── config.py            # central config (env vars)
-│   ├── ingest.py            # resolve + download .xlsx and PDF
-│   ├── load_series.py       # historical-series .xlsx → fatos_fiscais
-│   ├── extract.py           # PDF → clean text
-│   ├── load_structured.py   # (alt) parse numbers from PDF prose
-│   ├── rag_index.py         # text → pgvector
-│   └── rag_query.py         # hybrid RAG (facts + text → Groq)
+│   ├── config.py            # configuração central (variáveis de ambiente)
+│   ├── ingest.py            # resolve + baixa .xlsx e PDF
+│   ├── load_series.py       # série histórica .xlsx → fatos_fiscais
+│   ├── extract.py           # PDF → texto limpo
+│   ├── load_structured.py   # (alt) extrai números da prosa do PDF
+│   ├── rag_index.py         # texto → pgvector
+│   └── rag_query.py         # RAG híbrido (fatos + texto → Groq)
 ├── app/
 │   └── streamlit_app.py     # dashboard + chat
 ├── scripts/
-│   └── backfill_rag.py      # index a range of past months for the chat
+│   └── backfill_rag.py      # indexa uma faixa de meses passados para o chat
 ├── sql/
-│   └── schema.sql           # structured table + pgvector extension
+│   └── schema.sql           # tabela estruturada + extensão pgvector
 ├── .github/workflows/
-│   └── pipeline.yml         # monthly cron
-├── pipeline.py              # orchestrator
+│   └── pipeline.yml          # cron diário
+├── pipeline.py              # orquestrador
 └── requirements.txt
 ```
 
 ---
 
-## Roadmap
+## Roteiro (roadmap)
 
-- [x] Auto-resolve download URLs (no manual links).
-- [x] Load full historical series (since 2020) for time series + YoY.
-- [x] Backfill RAG text across months; hybrid, month-aware chat.
-- [ ] Data-quality assertions (e.g. net revenue − expenditure ≈ primary result).
-- [ ] Lightweight unit tests for the spreadsheet parser and month detection.
+- [x] Resolução automática das URLs de download (sem links manuais).
+- [x] Carga da série histórica (desde 2020) para série temporal + YoY.
+- [x] Backfill do texto RAG por vários meses; chat híbrido e ciente do mês.
+- [ ] Asserções de qualidade de dados (ex.: receita líquida − despesa ≈ resultado primário).
+- [ ] Testes unitários leves para o leitor da planilha e a detecção de mês.
 
 ---
 
-## License
+## Licença
 
-MIT — see `LICENSE`.
+MIT — veja o arquivo `LICENSE`.
