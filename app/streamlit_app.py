@@ -86,7 +86,7 @@ def _fmt_bi(v: float) -> str:
 # ---------------------------------------------------------------------------
 # Cabeçalho
 # ---------------------------------------------------------------------------
-st.title("📊 Resultado do Tesouro Nacional (RTN)")
+st.title("RTN - RESULTADO DO TESOURO NACIONAL")
 st.caption(
     "Pipeline automatizado: estrutura a série histórica oficial do RTN e indexa "
     "o Sumário Executivo para um chat com IA. Valores em R$ bilhões correntes."
