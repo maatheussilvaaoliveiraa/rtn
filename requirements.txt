@@ -5,6 +5,7 @@ pdfplumber==0.11.4
 
 # --- Manipulação e validação de dados ---
 pandas==2.2.3
+openpyxl==3.1.5            # leitura da série histórica oficial (.xlsx)
 pydantic==2.9.2
 python-dotenv==1.0.1
 

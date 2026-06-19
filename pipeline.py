@@ -25,8 +25,8 @@ import sys
 
 from src import config
 from src.extract import extract_text, limpar_texto
-from src.ingest import baixar_pdf
-from src.load_structured import processar as carregar_numeros
+from src.ingest import baixar_pdf, baixar_serie_historica
+from src.load_series import carregar_series
 from src.rag_index import indexar
 
 
@@ -37,29 +37,32 @@ def _mes_default() -> str:
 
 
 def rodar(mes_referencia: str) -> int:
-    """Executa o pipeline completo para um mês. Retorna código de saída (0=ok)."""
+    """Executa o pipeline completo para um mês. Retorna código de saída (0=ok).
+
+    Dois tracks independentes e de fontes diferentes:
+      - ESTRUTURADO: planilha de série histórica (.xlsx) -> fatos_fiscais.
+        A planilha é cumulativa, então uma execução atualiza toda a série.
+      - RAG: texto do Sumário Executivo (PDF) do mês -> pgvector (base do chat).
+    """
     print(f"\n=== PIPELINE RTN — mês de referência: {mes_referencia} ===\n")
     config.validar_config()  # falha cedo se faltar DATABASE_URL/GROQ_API_KEY
 
-    # --- Etapa 1: baixar o PDF ---
-    pdf_path = baixar_pdf(mes_referencia)
-
-    # --- Etapa 2: extrair e limpar o texto (insumo dos dois tracks) ---
-    texto = limpar_texto(extract_text(pdf_path))
-    print(f"[pipeline] texto extraído: {len(texto):,} caracteres.")
-
     ok_numeros = ok_texto = False
 
-    # --- Etapa 3: track estruturado (números -> fatos_fiscais) ---
+    # --- Track estruturado: série histórica (xlsx) -> fatos_fiscais ---
     try:
-        n = carregar_numeros(texto, mes_referencia)
+        xlsx_path = baixar_serie_historica(mes_referencia)
+        n = carregar_series(xlsx_path)
         ok_numeros = n > 0
-        print(f"[pipeline] track estruturado: {n} métricas.")
+        print(f"[pipeline] track estruturado: {n} fatos (série histórica).")
     except Exception as e:  # noqa: BLE001
         print(f"[pipeline] FALHA no track estruturado: {type(e).__name__}: {e}")
 
-    # --- Etapa 4: track não estruturado (texto -> pgvector) ---
+    # --- Track RAG: texto do PDF do mês -> pgvector ---
     try:
+        pdf_path = baixar_pdf(mes_referencia)
+        texto = limpar_texto(extract_text(pdf_path))
+        print(f"[pipeline] texto extraído: {len(texto):,} caracteres.")
         c = indexar(texto, mes_referencia)
         ok_texto = c > 0
         print(f"[pipeline] track RAG: {c} chunks indexados.")

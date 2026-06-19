@@ -8,8 +8,8 @@ __pycache__/
 venv/
 *.egg-info/
 
-# PDFs brutos baixados (opcional manter no repo p/ auditoria — veja README)
-data/raw/*.pdf
+# Arquivos brutos baixados (PDFs e planilhas) — recriados pelo pipeline
+data/raw/
 
 # Cache de modelos do fastembed
 .fastembed_cache/
@@ -17,3 +17,6 @@ data/raw/*.pdf
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Notas/screenshots de trabalho (não fazem parte do app)
+melhorias/
